@@ -283,3 +283,39 @@ exports.reportItem = async (req, res, next) => {
     next(err);
   }
 };
+
+/**
+ * @desc    Search items
+ * @route   GET /api/items/search
+ */
+exports.searchItems = async (req, res, next) => {
+  try {
+    const { q } = req.query;
+
+    if (!q || q.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query must be at least 2 characters',
+      });
+    }
+
+    const items = await Item.find({
+      isVisible: true,
+      $or: [
+        { title: { $regex: q, $options: 'i' } },
+        { description: { $regex: q, $options: 'i' } },
+        { location: { $regex: q, $options: 'i' } },
+      ],
+    })
+      .populate('userId', 'name email avatar')
+      .sort('-createdAt');
+
+    res.json({
+      success: true,
+      count: items.length,
+      data: items,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
