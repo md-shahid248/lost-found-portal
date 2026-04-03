@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: "https://lost-found-portal-82up.onrender.com/api",
+  baseURL: "https://lost-found-portal-82up.onrender.com",
   timeout: 15000,
 });
 api.interceptors.request.use(
