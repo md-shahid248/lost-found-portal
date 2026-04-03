@@ -2,119 +2,54 @@ const Item = require('../models/Item');
 const { cloudinary } = require('../config/cloudinary');
 
 /**
- * @desc    Get all items (with filtering, search, pagination)
+ * @desc    Get all items
  * @route   GET /api/items
- * @access  Public
  */
 exports.getItems = async (req, res, next) => {
   try {
-    const {
-      status,
-      category,
-      location,
-      resolved,
-      page = 1,
-      limit = 12,
-      sort = '-createdAt',
-    } = req.query;
+    const { status, category, location, resolved, page = 1, limit = 12 } = req.query;
 
     const filter = { isVisible: true };
 
-    if (status && ['lost', 'found'].includes(status)) filter.status = status;
+    if (status) filter.status = status;
     if (category) filter.category = category;
     if (location) filter.location = { $regex: location, $options: 'i' };
     if (resolved !== undefined) filter.resolved = resolved === 'true';
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    const [items, total] = await Promise.all([
-      Item.find(filter)
-        .populate('userId', 'name email phone avatar')
-        .sort(sort)
-        .skip(skip)
-        .limit(parseInt(limit)),
-      Item.countDocuments(filter),
-    ]);
-
-    res.json({
-      success: true,
-      data: items,
-      pagination: {
-        current: parseInt(page),
-        total: Math.ceil(total / parseInt(limit)),
-        count: total,
-        limit: parseInt(limit),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Search items by text
- * @route   GET /api/items/search
- * @access  Public
- */
-exports.searchItems = async (req, res, next) => {
-  try {
-    const { q, status, category, page = 1, limit = 12 } = req.query;
-
-    if (!q || q.trim().length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: 'Search query must be at least 2 characters',
-      });
-    }
-
-    const filter = {
-      isVisible: true,
-      $or: [
-        { title: { $regex: q, $options: 'i' } },
-        { description: { $regex: q, $options: 'i' } },
-        { location: { $regex: q, $options: 'i' } },
-      ],
-    };
-
-    if (status) filter.status = status;
-    if (category) filter.category = category;
-
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const skip = (page - 1) * limit;
 
     const [items, total] = await Promise.all([
       Item.find(filter)
         .populate('userId', 'name email avatar')
         .sort('-createdAt')
         .skip(skip)
-        .limit(parseInt(limit)),
+        .limit(Number(limit)),
       Item.countDocuments(filter),
     ]);
 
     res.json({
       success: true,
       data: items,
-      query: q,
       pagination: {
-        current: parseInt(page),
-        total: Math.ceil(total / parseInt(limit)),
+        current: Number(page),
+        total: Math.ceil(total / limit),
         count: total,
       },
     });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 };
 
 /**
  * @desc    Get single item
  * @route   GET /api/items/:id
- * @access  Public
  */
 exports.getItem = async (req, res, next) => {
   try {
     const item = await Item.findById(req.params.id).populate(
       'userId',
-      'name email phone avatar createdAt'
+      'name email phone avatar'
     );
 
     if (!item || !item.isVisible) {
@@ -122,31 +57,43 @@ exports.getItem = async (req, res, next) => {
     }
 
     res.json({ success: true, data: item });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 };
 
 /**
- * @desc    Create item (lost or found)
+ * @desc    Create item
  * @route   POST /api/items
- * @access  Private
  */
 exports.createItem = async (req, res, next) => {
   try {
-    const { title, description, category, status, location, date, contactEmail, contactPhone } =
-      req.body;
+    const {
+      title,
+      description,
+      category,
+      status,
+      location,
+      date,
+      contactEmail,
+      contactPhone,
+    } = req.body;
 
-    // Handle image upload
-    let image = { url: '', publicId: '' };
+    if (!title || !category || !status || !location) {
+      return res.status(400).json({
+        success: false,
+        message: 'Required fields missing',
+      });
+    }
+
+    // ✅ Cloudinary only
+    let image = null;
+
     if (req.file) {
-      if (req.file.path) {
-        // Cloudinary
-        image = { url: req.file.path, publicId: req.file.filename };
-      } else {
-        // Local storage
-        image = { url: `/uploads/${req.file.filename}`, publicId: req.file.filename };
-      }
+      image = {
+        url: req.file.path,
+        publicId: req.file.filename,
+      };
     }
 
     const item = await Item.create({
@@ -155,29 +102,28 @@ exports.createItem = async (req, res, next) => {
       category,
       status,
       location,
-      date: new Date(date),
+      date: date ? new Date(date) : new Date(),
       image,
       userId: req.user._id,
       contactEmail: contactEmail || req.user.email,
       contactPhone: contactPhone || req.user.phone,
     });
 
-    const populatedItem = await item.populate('userId', 'name email avatar');
+    const populated = await item.populate('userId', 'name email avatar');
 
     res.status(201).json({
       success: true,
-      message: `${status === 'lost' ? 'Lost' : 'Found'} item posted successfully!`,
-      data: populatedItem,
+      message: 'Item posted successfully',
+      data: populated,
     });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 };
 
 /**
  * @desc    Update item
  * @route   PUT /api/items/:id
- * @access  Private (owner or admin)
  */
 exports.updateItem = async (req, res, next) => {
   try {
@@ -187,30 +133,30 @@ exports.updateItem = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Item not found' });
     }
 
-    // Check ownership (admin can edit any)
-    if (item.userId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Not authorized to edit this item' });
+    // Authorization
+    if (
+      item.userId.toString() !== req.user._id.toString() &&
+      req.user.role !== 'admin'
+    ) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
     const updateData = { ...req.body };
 
-    // Handle new image upload
+    // Handle image update
     if (req.file) {
-      // Delete old Cloudinary image if exists
-      if (item.image.publicId) {
-        try {
-          await cloudinary.uploader.destroy(item.image.publicId);
-        } catch (err) {
-          console.log('Could not delete old image:', err.message);
-        }
+      // delete old image
+      if (item.image?.publicId) {
+        await cloudinary.uploader.destroy(item.image.publicId);
       }
+
       updateData.image = {
-        url: req.file.path || `/uploads/${req.file.filename}`,
+        url: req.file.path,
         publicId: req.file.filename,
       };
     }
 
-    // Handle resolved status
+    // Handle resolve toggle
     if (updateData.resolved === true || updateData.resolved === 'true') {
       updateData.resolvedAt = new Date();
     }
@@ -220,16 +166,19 @@ exports.updateItem = async (req, res, next) => {
       runValidators: true,
     }).populate('userId', 'name email avatar');
 
-    res.json({ success: true, message: 'Item updated successfully!', data: item });
-  } catch (error) {
-    next(error);
+    res.json({
+      success: true,
+      message: 'Item updated',
+      data: item,
+    });
+  } catch (err) {
+    next(err);
   }
 };
 
 /**
  * @desc    Delete item
  * @route   DELETE /api/items/:id
- * @access  Private (owner or admin)
  */
 exports.deleteItem = async (req, res, next) => {
   try {
@@ -239,89 +188,80 @@ exports.deleteItem = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Item not found' });
     }
 
-    if (item.userId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (
+      item.userId.toString() !== req.user._id.toString() &&
+      req.user.role !== 'admin'
+    ) {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    // Delete image from Cloudinary
-    if (item.image.publicId) {
-      try {
-        await cloudinary.uploader.destroy(item.image.publicId);
-      } catch (err) {
-        console.log('Could not delete image:', err.message);
-      }
+    // delete image
+    if (item.image?.publicId) {
+      await cloudinary.uploader.destroy(item.image.publicId);
     }
 
     await item.deleteOne();
 
-    res.json({ success: true, message: 'Item deleted successfully!' });
-  } catch (error) {
-    next(error);
+    res.json({
+      success: true,
+      message: 'Item deleted',
+    });
+  } catch (err) {
+    next(err);
   }
 };
 
 /**
- * @desc    Get logged-in user's items
+ * @desc    My items
  * @route   GET /api/items/my-items
- * @access  Private
  */
 exports.getMyItems = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, status, resolved } = req.query;
-    const filter = { userId: req.user._id };
-    if (status) filter.status = status;
-    if (resolved !== undefined) filter.resolved = resolved === 'true';
-
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    const [items, total] = await Promise.all([
-      Item.find(filter).sort('-createdAt').skip(skip).limit(parseInt(limit)),
-      Item.countDocuments(filter),
-    ]);
+    const items = await Item.find({ userId: req.user._id }).sort('-createdAt');
 
     res.json({
       success: true,
       data: items,
-      pagination: { current: parseInt(page), total: Math.ceil(total / parseInt(limit)), count: total },
     });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 };
 
 /**
- * @desc    Mark item as resolved
+ * @desc    Toggle resolve
  * @route   PUT /api/items/:id/resolve
- * @access  Private (owner)
  */
 exports.resolveItem = async (req, res, next) => {
   try {
     const item = await Item.findById(req.params.id);
 
-    if (!item) return res.status(404).json({ success: false, message: 'Item not found' });
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'Item not found' });
+    }
 
     if (item.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
     item.resolved = !item.resolved;
-    item.resolvedAt = item.resolved ? new Date() : undefined;
+    item.resolvedAt = item.resolved ? new Date() : null;
+
     await item.save();
 
     res.json({
       success: true,
-      message: item.resolved ? '🎉 Item marked as resolved!' : 'Item marked as unresolved',
+      message: 'Status updated',
       data: item,
     });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 };
 
 /**
- * @desc    Report an item
+ * @desc    Report item
  * @route   POST /api/items/:id/report
- * @access  Private
  */
 exports.reportItem = async (req, res, next) => {
   try {
@@ -331,10 +271,15 @@ exports.reportItem = async (req, res, next) => {
       { new: true }
     );
 
-    if (!item) return res.status(404).json({ success: false, message: 'Item not found' });
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'Item not found' });
+    }
 
-    res.json({ success: true, message: 'Item reported. Admin will review it.' });
-  } catch (error) {
-    next(error);
+    res.json({
+      success: true,
+      message: 'Item reported',
+    });
+  } catch (err) {
+    next(err);
   }
 };
