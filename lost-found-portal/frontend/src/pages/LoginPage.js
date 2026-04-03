@@ -94,12 +94,7 @@ export default function LoginPage() {
               Create one free
             </Link>
           </p>
-
-          {/* Demo credentials hint */}
-          <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-700 text-xs text-amber-700 dark:text-amber-300">
-            <p className="font-semibold mb-1">🧪 Demo Mode</p>
-            <p>Register a new account to explore all features. Admin: set <code>role: "admin"</code> in MongoDB.</p>
-          </div>
+              
         </div>
       </div>
     </div>
