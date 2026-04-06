@@ -241,7 +241,7 @@ Now log out and log back in — you'll see the Admin panel in the navbar.
 ### Option A: Render.com (Free Tier — Easiest)
 
 **Deploy Backend:**
-1. Push your code to GitHub.
+1. Push your code to GitHub
 2. Go to [render.com](https://render.com) → New → Web Service
 3. Connect your repository, select the `backend/` directory
 4. Build command: `npm install`
