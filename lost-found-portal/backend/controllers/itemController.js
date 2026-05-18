@@ -7,14 +7,37 @@ const { cloudinary } = require('../config/cloudinary');
  */
 exports.getItems = async (req, res, next) => {
   try {
-    const { status, category, location, resolved, page = 1, limit = 12 } = req.query;
+    const {
+      status,
+      category,
+      location,
+      resolved,
+      page = 1,
+      limit = 12,
+    } = req.query;
 
-    const filter = { isVisible: true };
+    const filter = {
+      isVisible: true,
+    };
 
-    if (status) filter.status = status;
-    if (category) filter.category = category;
-    if (location) filter.location = { $regex: location, $options: 'i' };
-    if (resolved !== undefined) filter.resolved = resolved === 'true';
+    if (status) {
+      filter.status = status;
+    }
+
+    if (category) {
+      filter.category = category;
+    }
+
+    if (location) {
+      filter.location = {
+        $regex: location,
+        $options: 'i',
+      };
+    }
+
+    if (resolved !== undefined) {
+      filter.resolved = resolved === 'true';
+    }
 
     const skip = (page - 1) * limit;
 
@@ -24,12 +47,14 @@ exports.getItems = async (req, res, next) => {
         .sort('-createdAt')
         .skip(skip)
         .limit(Number(limit)),
+
       Item.countDocuments(filter),
     ]);
 
     res.json({
       success: true,
       data: items,
+
       pagination: {
         current: Number(page),
         total: Math.ceil(total / limit),
@@ -47,16 +72,21 @@ exports.getItems = async (req, res, next) => {
  */
 exports.getItem = async (req, res, next) => {
   try {
-    const item = await Item.findById(req.params.id).populate(
-      'userId',
-      'name email phone avatar'
-    );
+    const item = await Item.findById(req.params.id)
+      .populate('userId', 'name email phone avatar');
 
     if (!item || !item.isVisible) {
-      return res.status(404).json({ success: false, message: 'Item not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Item not found',
+      });
     }
 
-    res.json({ success: true, data: item });
+    res.json({
+      success: true,
+      data: item,
+    });
+
   } catch (err) {
     next(err);
   }
@@ -86,7 +116,7 @@ exports.createItem = async (req, res, next) => {
       });
     }
 
-    // ✅ Cloudinary only
+    // Cloudinary image
     let image = null;
 
     if (req.file) {
@@ -102,20 +132,34 @@ exports.createItem = async (req, res, next) => {
       category,
       status,
       location,
-      date: date ? new Date(date) : new Date(),
+
+      date: date
+        ? new Date(date)
+        : new Date(),
+
       image,
-      userId: req.user._id,
-      contactEmail: contactEmail || req.user.email,
-      contactPhone: contactPhone || req.user.phone,
+
+      // ✅ FIXED
+      userId: req.user.id,
+
+      contactEmail:
+        contactEmail || req.user.email,
+
+      contactPhone:
+        contactPhone || req.user.phone,
     });
 
-    const populated = await item.populate('userId', 'name email avatar');
+    const populated = await item.populate(
+      'userId',
+      'name email avatar'
+    );
 
     res.status(201).json({
       success: true,
       message: 'Item posted successfully',
       data: populated,
     });
+
   } catch (err) {
     next(err);
   }
@@ -130,24 +174,35 @@ exports.updateItem = async (req, res, next) => {
     let item = await Item.findById(req.params.id);
 
     if (!item) {
-      return res.status(404).json({ success: false, message: 'Item not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Item not found',
+      });
     }
 
-    // Authorization
+    // ✅ FIXED authorization
     if (
-      item.userId.toString() !== req.user._id.toString() &&
+      item.userId.toString() !== req.user.id &&
       req.user.role !== 'admin'
     ) {
-      return res.status(403).json({ success: false, message: 'Not authorized' });
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized',
+      });
     }
 
-    const updateData = { ...req.body };
+    const updateData = {
+      ...req.body,
+    };
 
     // Handle image update
     if (req.file) {
+
       // delete old image
       if (item.image?.publicId) {
-        await cloudinary.uploader.destroy(item.image.publicId);
+        await cloudinary.uploader.destroy(
+          item.image.publicId
+        );
       }
 
       updateData.image = {
@@ -156,21 +211,29 @@ exports.updateItem = async (req, res, next) => {
       };
     }
 
-    // Handle resolve toggle
-    if (updateData.resolved === true || updateData.resolved === 'true') {
+    // Handle resolve
+    if (
+      updateData.resolved === true ||
+      updateData.resolved === 'true'
+    ) {
       updateData.resolvedAt = new Date();
     }
 
-    item = await Item.findByIdAndUpdate(req.params.id, updateData, {
-      new: true,
-      runValidators: true,
-    }).populate('userId', 'name email avatar');
+    item = await Item.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).populate('userId', 'name email avatar');
 
     res.json({
       success: true,
       message: 'Item updated',
       data: item,
     });
+
   } catch (err) {
     next(err);
   }
@@ -185,19 +248,28 @@ exports.deleteItem = async (req, res, next) => {
     const item = await Item.findById(req.params.id);
 
     if (!item) {
-      return res.status(404).json({ success: false, message: 'Item not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Item not found',
+      });
     }
 
+    // ✅ FIXED authorization
     if (
-      item.userId.toString() !== req.user._id.toString() &&
+      item.userId.toString() !== req.user.id &&
       req.user.role !== 'admin'
     ) {
-      return res.status(403).json({ success: false, message: 'Not authorized' });
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized',
+      });
     }
 
-    // delete image
+    // delete cloudinary image
     if (item.image?.publicId) {
-      await cloudinary.uploader.destroy(item.image.publicId);
+      await cloudinary.uploader.destroy(
+        item.image.publicId
+      );
     }
 
     await item.deleteOne();
@@ -206,30 +278,44 @@ exports.deleteItem = async (req, res, next) => {
       success: true,
       message: 'Item deleted',
     });
+
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * @desc    My items
+ * @desc    Get my items
  * @route   GET /api/items/my-items
  */
 exports.getMyItems = async (req, res, next) => {
   try {
-    const items = await Item.find({ userId: req.user._id }).sort('-createdAt');
+
+    // ✅ FIXED
+    const items = await Item.find({
+      userId: req.user.id,
+    })
+      .populate('userId', 'name email avatar')
+      .sort('-createdAt');
 
     res.json({
       success: true,
       data: items,
+
+      pagination: {
+        current: 1,
+        total: 1,
+        count: items.length,
+      },
     });
+
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * @desc    Toggle resolve
+ * @desc    Resolve / Unresolve item
  * @route   PUT /api/items/:id/resolve
  */
 exports.resolveItem = async (req, res, next) => {
@@ -237,23 +323,40 @@ exports.resolveItem = async (req, res, next) => {
     const item = await Item.findById(req.params.id);
 
     if (!item) {
-      return res.status(404).json({ success: false, message: 'Item not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Item not found',
+      });
     }
 
-    if (item.userId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ success: false, message: 'Not authorized' });
+    // ✅ FIXED authorization
+    if (
+      item.userId.toString() !== req.user.id &&
+      req.user.role !== 'admin'
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized',
+      });
     }
 
     item.resolved = !item.resolved;
-    item.resolvedAt = item.resolved ? new Date() : null;
+
+    item.resolvedAt = item.resolved
+      ? new Date()
+      : null;
 
     await item.save();
 
     res.json({
       success: true,
-      message: 'Status updated',
+      message: item.resolved
+        ? 'Item marked resolved'
+        : 'Item marked unresolved',
+
       data: item,
     });
+
   } catch (err) {
     next(err);
   }
@@ -265,20 +368,31 @@ exports.resolveItem = async (req, res, next) => {
  */
 exports.reportItem = async (req, res, next) => {
   try {
+
     const item = await Item.findByIdAndUpdate(
       req.params.id,
-      { $inc: { reportCount: 1 } },
-      { new: true }
+      {
+        $inc: {
+          reportCount: 1,
+        },
+      },
+      {
+        new: true,
+      }
     );
 
     if (!item) {
-      return res.status(404).json({ success: false, message: 'Item not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Item not found',
+      });
     }
 
     res.json({
       success: true,
       message: 'Item reported',
     });
+
   } catch (err) {
     next(err);
   }
@@ -290,21 +404,41 @@ exports.reportItem = async (req, res, next) => {
  */
 exports.searchItems = async (req, res, next) => {
   try {
+
     const { q } = req.query;
 
     if (!q || q.trim().length < 2) {
       return res.status(400).json({
         success: false,
-        message: 'Search query must be at least 2 characters',
+        message:
+          'Search query must be at least 2 characters',
       });
     }
 
     const items = await Item.find({
       isVisible: true,
+
       $or: [
-        { title: { $regex: q, $options: 'i' } },
-        { description: { $regex: q, $options: 'i' } },
-        { location: { $regex: q, $options: 'i' } },
+        {
+          title: {
+            $regex: q,
+            $options: 'i',
+          },
+        },
+
+        {
+          description: {
+            $regex: q,
+            $options: 'i',
+          },
+        },
+
+        {
+          location: {
+            $regex: q,
+            $options: 'i',
+          },
+        },
       ],
     })
       .populate('userId', 'name email avatar')
@@ -315,6 +449,7 @@ exports.searchItems = async (req, res, next) => {
       count: items.length,
       data: items,
     });
+
   } catch (err) {
     next(err);
   }
