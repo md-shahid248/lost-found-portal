@@ -496,7 +496,7 @@ docker-compose up --build
 | Notifications | react-hot-toast |
 | Date Formatting | date-fns |
 
----
+----
 
 ## 🤝 Contributing
 
